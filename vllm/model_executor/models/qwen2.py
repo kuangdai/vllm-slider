@@ -194,14 +194,14 @@ class Qwen2Attention(nn.Module):
             slider_key, slider_value, slider_factor = slider_key_value_factor
 
             # Step 0: Determine seq lengths
-            q_lens_now = attn_metadata.seq_lens
+            q_lens_now = np.array(attn_metadata.seq_lens)
             if self.previous_q_lens is None:
                 # first call in generate()
                 q_lens = q_lens_now
             else:
                 # continued call in generate()
                 q_lens = q_lens_now - self.previous_q_lens
-            self.previous_q_lens = q_lens_now.clone()
+            self.previous_q_lens = q_lens_now.copy()
 
             # Step 1: Convert query from flat to batch
             q_list = torch.split(q, q_lens.tolist(), dim=0)
