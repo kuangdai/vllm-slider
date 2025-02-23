@@ -1912,13 +1912,18 @@ class CUDAGraphRunner(nn.Module):
         # This is to make sure that the captured graph does not include the
         # kernel launches for initial benchmarking (e.g., Triton autotune).
         # Note one iteration is not enough for torch.compile
+
+        ##################
+        # SLIDER PROFILE #
+        ##################
+        if attn_metadata.seq_lens is None:
+            # With in graph capture, tolist cannot be used
+            attn_metadata.seq_lens = attn_metadata.seq_lens_tensor.tolist()
         for _ in range(_NUM_WARMUP_ITERS):
             ##################
             # SLIDER PROFILE #
             ##################
             self.model.model.set_slider_variables(ensure_slider_on=False)
-            if attn_metadata.seq_lens is None:
-                attn_metadata.seq_lens = attn_metadata.seq_lens_tensor.tolist()
             self.model(
                 input_ids=input_ids,
                 positions=positions,
