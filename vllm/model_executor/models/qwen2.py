@@ -373,9 +373,6 @@ class SliderVariables:
             dtype = layer.slider.encode_linear.weight.dtype
             self.layer_copies.append(self.original.to(device=device, dtype=dtype))
 
-    def forward(self, _):
-        pass
-
 
 @support_torch_compile(
     dynamic_arg_dims={
