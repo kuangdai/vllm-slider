@@ -1937,7 +1937,8 @@ class CUDAGraphRunner(nn.Module):
         self.model.model.set_slider_variables(ensure_slider_on=False)
         if attn_metadata.seq_lens is None:
             attn_metadata.seq_lens = attn_metadata.seq_lens_tensor.tolist()
-        print(attn_metadata)
+        print("******************")
+        print(attn_metadata.seq_lens)
         assert 0
         with torch.cuda.graph(self._graph, pool=memory_pool, stream=stream):
             output_hidden_or_intermediate_states = self.model(
