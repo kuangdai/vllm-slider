@@ -193,11 +193,6 @@ class Qwen2Attention(nn.Module):
         if slider_key_value_factor is not None:
             slider_key, slider_value, slider_factor = slider_key_value_factor
 
-            print("q.shape ********", q.shape)
-            print("seq_lens_tensor ********", attn_metadata.seq_lens_tensor)
-            print("self.previous_q_lens ********", self.previous_q_lens)
-            print("------------------------------------------------------------------------")
-
             # Step 0: Determine seq lengths
             q_lens_now = attn_metadata.seq_lens_tensor
             if self.previous_q_lens is None:
