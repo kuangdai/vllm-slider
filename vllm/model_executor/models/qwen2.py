@@ -204,7 +204,8 @@ class Qwen2Attention(nn.Module):
             self.previous_q_lens = q_lens_now.clone()
 
             # Step 1: Convert query from flat to batch
-            q_list = torch.split(q, q_lens, dim=0)
+            print("q_lens", q_lens)
+            q_list = torch.split(q, q_lens.tolist(), dim=0)
             # [batch, seq_len, head * token_dim]
             q_batch = pad_sequence(q_list, batch_first=True, padding_side="right")
             n_token_dim = slider_key.shape[-1]
