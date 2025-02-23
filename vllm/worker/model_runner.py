@@ -1931,11 +1931,11 @@ class CUDAGraphRunner(nn.Module):
         torch.cuda.synchronize()
         # Capture the graph.
         self._graph = torch.cuda.CUDAGraph()
+        ##################
+        # SLIDER PROFILE #
+        ##################
+        self.model.model.set_slider_variables(ensure_slider_on=False)
         with torch.cuda.graph(self._graph, pool=memory_pool, stream=stream):
-            ##################
-            # SLIDER PROFILE #
-            ##################
-            self.model.model.set_slider_variables(ensure_slider_on=False)
             output_hidden_or_intermediate_states = self.model(
                 input_ids=input_ids,
                 positions=positions,
@@ -1944,7 +1944,6 @@ class CUDAGraphRunner(nn.Module):
                 intermediate_tensors=intermediate_inputs,
                 **kwargs,
             )
-            self.model.model.unset_slider_variables(ensure_slider_on=False)
 
             if isinstance(output_hidden_or_intermediate_states, torch.Tensor):
                 hidden_or_intermediate_states = weak_ref_tensor(
@@ -1962,6 +1961,7 @@ class CUDAGraphRunner(nn.Module):
             # make sure `output_hidden_or_intermediate_states` is deleted
             # in the graph's memory pool
             gc.collect()
+        self.model.model.unset_slider_variables(ensure_slider_on=False)
         torch.cuda.synchronize()
 
         # Save the input and output buffers.
