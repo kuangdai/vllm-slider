@@ -419,7 +419,7 @@ class DefaultModelLoader(BaseModelLoader):
                         "Following weights were not initialized from "
                         f"checkpoint: {weights_not_loaded_other}")
                 if weights_not_loaded_slider:
-                    logger.warning("SLIDER weights were not initialized."
+                    logger.warning("SLIDER weights were not initialized. "
                                    "This is OK. The model behaves as pretrained model, "
                                    "and slider variables will take no effect.")
             _process_weights_after_loading(model, model_config, target_device)
@@ -1136,7 +1136,7 @@ class BitsAndBytesModelLoader(BaseModelLoader):
                         "Following weights were not initialized from "
                         f"checkpoint: {weights_not_loaded_other}")
                 if weights_not_loaded_slider:
-                    logger.warning("SLIDER weights were not initialized."
+                    logger.warning("SLIDER weights were not initialized. "
                                    "This is OK. The model behaves as pretrained model, "
                                    "and slider variables will take no effect.")
 
