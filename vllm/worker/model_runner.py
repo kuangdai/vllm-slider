@@ -1478,10 +1478,6 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
                 dtype=self.model_config.dtype,
                 device=self.device)
 
-        ##################
-        # SLIDER PROFILE #
-        ##################
-        self.model.model.set_slider_variables(ensure_slider_on=False)
         with self.attn_state.graph_capture(max_batch_size), graph_capture(
                 self.device) as graph_capture_context:
             # NOTE: Capturing the largest batch size first may help reduce the
@@ -1497,6 +1493,10 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
                                            self.vllm_config.compilation_config.
                                            cudagraph_capture_sizes)
                 for batch_size in cudagraph_capture_sizes:
+                    ##################
+                    # SLIDER PROFILE #
+                    ##################
+                    self.model.model.set_slider_variables(ensure_slider_on=False)
                     attn_metadata = (
                         self.attn_state.graph_capture_get_metadata_for_batch(
                             batch_size,
@@ -1565,7 +1565,7 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
                     self.graph_runners[virtual_engine][batch_size] = (
                         graph_runner)
 
-        self.model.model.unset_slider_variables(ensure_slider_on=False)
+                    self.model.model.unset_slider_variables(ensure_slider_on=False)
         end_time = time.perf_counter()
         end_free_gpu_memory = torch.cuda.mem_get_info()[0]
         elapsed_time = end_time - start_time
