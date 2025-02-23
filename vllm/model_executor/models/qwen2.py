@@ -449,10 +449,18 @@ class Qwen2Model(nn.Module):
     ##############
     # SLIDER VAR #
     ##############
-    def set_slider_variables(self, slider_variables):
+    def set_slider_variables(self, slider_variables=None):
         assert self.config.slider_on, "Cannot call set_slider_variables() when slider is off."
         # Set slider variable
+        if slider_variables is None:
+            slider_variables = [[0.] * self.config.slider_n_variables]
         self.slider_variables = SliderVariables(slider_variables, self.layers)
+        # Reset slider-related state of layers
+        for layer in self.layers:
+            layer.reset_previous()
+
+    def unset_slider_variables(self):
+        self.slider_variables = None
         # Reset slider-related state of layers
         for layer in self.layers:
             layer.reset_previous()
@@ -468,10 +476,7 @@ class Qwen2Model(nn.Module):
     ) -> Union[torch.Tensor, IntermediateTensors]:
 
         if self.config.slider_on:
-            if self.slider_variables is None:
-                # VLLM will do several times of profile runs at model initialization
-                # For these runs, we create dummy slider variables
-                self.set_slider_variables([[0.] * self.config.slider_n_variables])
+            assert self.slider_variables is not None, "You have not called set_slider_variables()."
 
         if get_pp_group().is_first_rank:
             if inputs_embeds is not None:
