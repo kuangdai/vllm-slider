@@ -317,6 +317,7 @@ class Qwen2DecoderLayer(nn.Module):
         attn_metadata: AttentionMetadata,
         residual: Optional[torch.Tensor],
         slider_variables=None,
+        layer_idx=0
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         # Self Attention
         if residual is None:
@@ -334,12 +335,12 @@ class Qwen2DecoderLayer(nn.Module):
             assert slider_variables is not None
             recompute = self.previous_slider_variables is None  # Ensure first-time execution
             if self.previous_slider_variables is not None:
-                diff = (self.previous_slider_variables - slider_variables).norm().item()
+                diff = (self.previous_slider_variables - slider_variables.original).norm().item()
                 if diff > 1e-9:  # Using torch.float64, so 1e-9 is fine
                     recompute = True
             if recompute:
-                self.previous_slider_key_value_factor = self.slider(slider_variables)
-                self.previous_slider_variables = slider_variables.clone()  # Avoid unwanted mutation
+                self.previous_slider_key_value_factor = self.slider(slider_variables.layer_copies[layer_idx])
+                self.previous_slider_variables = slider_variables.original.clone()  # Avoid unwanted mutation
             slider_key_value_factor = self.previous_slider_key_value_factor
 
         hidden_states = self.self_attn(
@@ -490,7 +491,8 @@ class Qwen2Model(nn.Module):
                 kv_caches[i - self.start_layer],
                 attn_metadata,
                 residual,
-                self.slider_variables
+                self.slider_variables,
+                layer_idx=i
             )
         if not get_pp_group().is_last_rank:
             return IntermediateTensors({
