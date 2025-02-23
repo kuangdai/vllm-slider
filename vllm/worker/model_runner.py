@@ -1493,10 +1493,6 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
                                            self.vllm_config.compilation_config.
                                            cudagraph_capture_sizes)
                 for batch_size in cudagraph_capture_sizes:
-                    ##################
-                    # SLIDER PROFILE #
-                    ##################
-                    self.model.model.set_slider_variables(ensure_slider_on=False)
                     attn_metadata = (
                         self.attn_state.graph_capture_get_metadata_for_batch(
                             batch_size,
@@ -1564,8 +1560,6 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
                     self.graph_memory_pool = graph_runner.graph.pool()
                     self.graph_runners[virtual_engine][batch_size] = (
                         graph_runner)
-
-                    self.model.model.unset_slider_variables(ensure_slider_on=False)
         end_time = time.perf_counter()
         end_free_gpu_memory = torch.cuda.mem_get_info()[0]
         elapsed_time = end_time - start_time
@@ -1919,6 +1913,10 @@ class CUDAGraphRunner(nn.Module):
         # kernel launches for initial benchmarking (e.g., Triton autotune).
         # Note one iteration is not enough for torch.compile
         for _ in range(_NUM_WARMUP_ITERS):
+            ##################
+            # SLIDER PROFILE #
+            ##################
+            self.model.model.set_slider_variables(ensure_slider_on=False)
             self.model(
                 input_ids=input_ids,
                 positions=positions,
@@ -1927,6 +1925,7 @@ class CUDAGraphRunner(nn.Module):
                 intermediate_tensors=intermediate_inputs,
                 **kwargs,
             )
+            self.model.model.unset_slider_variables(ensure_slider_on=False)
         # Wait for the warm up operations to finish before proceeding with
         # Graph Capture.
         torch.cuda.synchronize()
