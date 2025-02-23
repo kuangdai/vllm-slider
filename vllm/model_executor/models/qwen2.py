@@ -449,8 +449,9 @@ class Qwen2Model(nn.Module):
     ##############
     # SLIDER VAR #
     ##############
-    def set_slider_variables(self, slider_variables=None):
-        assert self.config.slider_on, "Cannot call set_slider_variables() when slider is off."
+    def set_slider_variables(self, slider_variables=None, check_slider_on=True):
+        if check_slider_on:
+            assert self.config.slider_on, "Cannot call set_slider_variables() when slider is off."
         # Set slider variable
         if slider_variables is None:
             slider_variables = [[0.] * self.config.slider_n_variables]
@@ -459,7 +460,9 @@ class Qwen2Model(nn.Module):
         for layer in self.layers:
             layer.reset_previous()
 
-    def unset_slider_variables(self):
+    def unset_slider_variables(self, check_slider_on=True):
+        if check_slider_on:
+            assert self.config.slider_on, "Cannot call unset_slider_variables() when slider is off."
         self.slider_variables = None
         # Reset slider-related state of layers
         for layer in self.layers:

@@ -1345,8 +1345,9 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
             # Disable KV Scale Calculation for dummy data during profile run
             if model_input.attn_metadata is not None:
                 model_input.attn_metadata.enable_kv_scales_calculation = False
-
+            self.model.model.set_slider_variables(check_slider_on=False)
             self.execute_model(model_input, kv_caches, intermediate_tensors)
+            self.model.model.unset_slider_variables(check_slider_on=False)
             torch.cuda.synchronize()
             if self.lora_config:
                 # Remove dummy loras.
