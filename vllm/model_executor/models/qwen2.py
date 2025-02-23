@@ -195,7 +195,6 @@ class Qwen2Attention(nn.Module):
 
             print("q.shape ********", q.shape)
             print("seq_lens_tensor ********", attn_metadata.seq_lens_tensor)
-            print("seq_lens_tensor ********", attn_metadata.seq_lens_tensor)
             print("self.previous_q_lens ********", self.previous_q_lens)
             print("------------------------------------------------------------------------")
 
