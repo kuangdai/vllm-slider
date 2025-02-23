@@ -194,7 +194,7 @@ class Qwen2Attention(nn.Module):
             slider_key, slider_value, slider_factor = slider_key_value_factor
 
             # Step 0: Determine seq lengths
-            q_lens_now = attn_metadata.seq_lens_tensor
+            q_lens_now = attn_metadata.seq_lens
             if self.previous_q_lens is None:
                 # first call in generate()
                 q_lens = q_lens_now
