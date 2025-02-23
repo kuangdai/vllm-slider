@@ -366,6 +366,25 @@ class Qwen2DecoderLayer(nn.Module):
         "intermediate_tensors": 0,
         "inputs_embeds": 0,
     })
+
+
+##############
+# SLIDER VAR #
+##############
+class SliderVariables:
+    def __init__(self, slider_variables, layers):
+        # Used for check re-compute
+        self.original = torch.tensor(slider_variables, dtype=torch.float64)
+        # Used for computation
+        # Resolve device in advance to avoid
+        # RuntimeError: CUDA error: operation not permitted when stream is capturing
+        self.layer_copies = []
+        for layer in layers:
+            device = layer.slider.encode_linear.weight.device
+            dtype = layer.slider.encode_linear.weight.dtype
+            self.layer_copies.append(self.original.to(device=device, dtype=dtype))
+
+
 class Qwen2Model(nn.Module):
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
@@ -428,14 +447,14 @@ class Qwen2Model(nn.Module):
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.embed_tokens(input_ids)
 
-    ###############
-    # SLIDER ARGS #
-    ###############
+    ##############
+    # SLIDER VAR #
+    ##############
     def set_slider_variables(self, slider_variables):
         assert self.config.slider_on, "Cannot call set_slider_variables() when slider is off."
-        # using float64 to on-line check identical ones
-        self.slider_variables = torch.tensor(slider_variables, dtype=torch.float64)
-        # reset previous parameters
+        # Set slider variable
+        self.slider_variables = SliderVariables(slider_variables, self.layers)
+        # Reset slider-related state of layers
         for layer in self.layers:
             layer.reset_previous()
 
@@ -450,7 +469,10 @@ class Qwen2Model(nn.Module):
     ) -> Union[torch.Tensor, IntermediateTensors]:
 
         if self.config.slider_on:
-            assert self.slider_variables is not None, "You have not called set_slider_variables()."
+            if self.slider_variables is None:
+                # VLLM will do several times of profile runs at model initialization
+                # For these runs, we create dummy slider variables
+                self.set_slider_variables([[0.] * self.config.slider_n_variables])
 
         if get_pp_group().is_first_rank:
             if inputs_embeds is not None:

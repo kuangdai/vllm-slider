@@ -52,21 +52,23 @@ class SliderModel(nn.Module):
         self.tanh = nn.Tanh()
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, prefix: torch.Tensor):
+    def forward(self, prefix: torch.Tensor, cast_dtype_device=False):
         """
         Forward pass for generating key-value pairs from slider variables.
 
         Args:
             prefix (Tensor): Input slider values of shape [batch_size, n_variables].
+            cast_dtype_device (bool): Cast dtype and device of prefix.
 
         Returns:
             Tensor: Key-value pairs of shape [2, batch_size, n_base_heads, seq_len, n_token_dim].
         """
 
         # Move input to the same device and dtype as the model parameters
-        device = self.encode_linear.weight.device
-        dtype = self.encode_linear.weight.dtype
-        prefix = prefix.to(device=device, dtype=dtype)
+        if cast_dtype_device:
+            device = self.encode_linear.weight.device
+            dtype = self.encode_linear.weight.dtype
+            prefix = prefix.to(device=device, dtype=dtype)
 
         # Reshape input to [batch_size, n_variables, 1] for matrix multiplication
         prefix = prefix.unsqueeze(-1)  # Shape: [batch_size, n_variables, 1]
