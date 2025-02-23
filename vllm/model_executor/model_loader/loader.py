@@ -1129,8 +1129,16 @@ class BitsAndBytesModelLoader(BaseModelLoader):
         if loaded_weights is not None:
             weights_not_loaded = weights_to_load - loaded_weights
             if weights_not_loaded:
-                raise ValueError("Following weights were not initialized from "
-                                 f"checkpoint: {weights_not_loaded}")
+                weights_not_loaded_slider = {s for s in weights_not_loaded if "slider" in s}
+                weights_not_loaded_other = weights_not_loaded - weights_not_loaded_slider
+                if weights_not_loaded_other:
+                    raise ValueError(
+                        "Following weights were not initialized from "
+                        f"checkpoint: {weights_not_loaded_other}")
+                if weights_not_loaded_slider:
+                    logger.warning("SLIDER weights were not initialized."
+                                   "This is OK. The model behaves as pretrained model, "
+                                   "and slider variables will take no effect.")
 
         torch.cuda.empty_cache()
 
