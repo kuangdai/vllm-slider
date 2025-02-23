@@ -58,6 +58,10 @@ from .utils import (AutoWeightsLoader, PPMissingLayer, WeightsMapper,
                     make_empty_intermediate_tensors_factory, make_layers,
                     maybe_prefix)
 
+from .slider import SliderModel
+import numpy as np
+from torch.nn.utils.rnn import pad_sequence
+
 logger = init_logger(__name__)
 
 
@@ -165,6 +169,10 @@ class Qwen2Attention(nn.Module):
                               quant_config=quant_config,
                               prefix=f"{prefix}.attn",
                               attn_type=attn_type)
+        ####################
+        # SLIDER ATTENTION #
+        ####################
+        self.previous_q_lens = None
 
     def forward(
         self,
@@ -172,11 +180,58 @@ class Qwen2Attention(nn.Module):
         hidden_states: torch.Tensor,
         kv_cache: torch.Tensor,
         attn_metadata: AttentionMetadata,
+        slider_key_value_factor=None,
     ) -> torch.Tensor:
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
         q, k = self.rotary_emb(positions, q, k)
         attn_output = self.attn(q, k, v, kv_cache, attn_metadata)
+
+        ####################
+        # SLIDER ATTENTION #
+        ####################
+        if slider_key_value_factor is not None:
+            slider_key, slider_value, slider_factor = slider_key_value_factor
+
+            # Step 0: Determine seq lengths
+            q_lens_now = attn_metadata.seq_lens_tensor
+            if self.previous_q_lens is None:
+                # first call in generate()
+                q_lens = q_lens_now
+            else:
+                # continued call in generate()
+                q_lens = q_lens_now - self.previous_q_lens
+            self.previous_q_lens = q_lens_now.clone()
+
+            # Step 1: Convert query from flat to batch
+            q_list = torch.split(q, q_lens.tolist(), dim=0)
+            # [batch, seq_len, head * token_dim]
+            q_batch = pad_sequence(q_list, batch_first=True, padding_side="right")
+            n_token_dim = slider_key.shape[-1]
+            # [batch, seq_len, head, token_dim]
+            q_batch = q_batch.reshape(q_batch.shape[0], q_batch.shape[1], -1, n_token_dim)
+            # [batch, head, seq_len, token_dim]
+            q_batch = q_batch.permute(0, 2, 1, 3)
+
+            # Step 2: Repeat slider kv
+            repeat = q_batch.shape[1] // slider_key.shape[1]
+            slider_key = torch.repeat_interleave(slider_key, repeat, dim=1)
+            slider_value = torch.repeat_interleave(slider_value, repeat, dim=1)
+
+            # Step 3: Compute attention
+            slider_attn_weights = torch.einsum("BHNZ,BHMZ->BHNM", q_batch, slider_key)
+            slider_attn_weights = torch.softmax(slider_attn_weights / np.sqrt(slider_key.shape[-1]),
+                                                dim=-1)
+            slider_attn_output = torch.einsum("BHNM,BHMZ->BHNZ", slider_attn_weights, slider_value)
+
+            # Step 4: Convert slider_attn_output from batch to flat
+            # [head, seq_len, token_dim]
+            slider_attn_output = torch.cat([slider_attn_output[i, :, :q_len, :]
+                                            for i, q_len in enumerate(q_lens)], dim=1)
+            # [seq_len, head, token_dim]
+            slider_attn_output = slider_attn_output.permute(1, 0, 2)
+            slider_attn_output = slider_attn_output.reshape(slider_attn_output.shape[0], -1)
+            attn_output = attn_output + slider_attn_output * slider_factor
         output, _ = self.o_proj(attn_output)
         return output
 
@@ -229,6 +284,31 @@ class Qwen2DecoderLayer(nn.Module):
         self.post_attention_layernorm = RMSNorm(config.hidden_size,
                                                 eps=config.rms_norm_eps)
 
+        ################
+        # SLIDER MODEL #
+        ################
+        self.slider = None
+        if config.slider_on:
+            self.slider = SliderModel(
+                config.slider_n_variables,
+                config.slider_n_hidden,
+                config.slider_n_heads_sharing_slider,
+                config.slider_dropout,
+                config.num_key_value_heads,
+                config.hidden_size // config.num_attention_heads
+            )
+
+        ###################
+        # SLIDER ENCODING #
+        ###################
+        self.previous_slider_key_value_factor = None
+        self.previous_slider_variables = None
+
+    def reset_previous(self):
+        self.previous_slider_key_value_factor = None
+        self.previous_slider_variables = None
+        self.self_attn.previous_q_lens = None
+
     def forward(
         self,
         positions: torch.Tensor,
@@ -236,6 +316,7 @@ class Qwen2DecoderLayer(nn.Module):
         kv_cache: torch.Tensor,
         attn_metadata: AttentionMetadata,
         residual: Optional[torch.Tensor],
+        slider_variables=None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         # Self Attention
         if residual is None:
@@ -244,11 +325,29 @@ class Qwen2DecoderLayer(nn.Module):
         else:
             hidden_states, residual = self.input_layernorm(
                 hidden_states, residual)
+
+        ###################
+        # SLIDER ENCODING #
+        ###################
+        slider_key_value_factor = None
+        if self.slider is not None:
+            assert slider_variables is not None
+            recompute = self.previous_slider_variables is None  # Ensure first-time execution
+            if self.previous_slider_variables is not None:
+                diff = (self.previous_slider_variables - slider_variables).norm().item()
+                if diff > 1e-9:  # Using torch.float64, so 1e-9 is fine
+                    recompute = True
+            if recompute:
+                self.previous_slider_key_value_factor = self.slider(slider_variables)
+                self.previous_slider_variables = slider_variables.clone()  # Avoid unwanted mutation
+            slider_key_value_factor = self.previous_slider_key_value_factor
+
         hidden_states = self.self_attn(
             positions=positions,
             hidden_states=hidden_states,
             kv_cache=kv_cache,
             attn_metadata=attn_metadata,
+            slider_key_value_factor=slider_key_value_factor
         )
 
         # Fully Connected
@@ -321,8 +420,24 @@ class Qwen2Model(nn.Module):
         else:
             self.norm = PPMissingLayer()
 
+        ###############
+        # SLIDER ARGS #
+        ###############
+        self.slider_variables = None
+
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.embed_tokens(input_ids)
+
+    ###############
+    # SLIDER ARGS #
+    ###############
+    def set_slider_variables(self, slider_variables):
+        assert self.config.slider_on, "Cannot call set_slider_variables() when slider is off."
+        # using float64 to on-line check identical ones
+        self.slider_variables = torch.tensor(slider_variables, dtype=torch.float64)
+        # reset previous parameters
+        for layer in self.layers:
+            layer.reset_previous()
 
     def forward(
         self,
@@ -333,6 +448,10 @@ class Qwen2Model(nn.Module):
         intermediate_tensors: Optional[IntermediateTensors] = None,
         inputs_embeds: Optional[torch.Tensor] = None,
     ) -> Union[torch.Tensor, IntermediateTensors]:
+
+        if self.config.slider_on:
+            assert self.slider_variables is not None, "You have not called set_slider_variables()."
+
         if get_pp_group().is_first_rank:
             if inputs_embeds is not None:
                 hidden_states = inputs_embeds
@@ -351,6 +470,7 @@ class Qwen2Model(nn.Module):
                 kv_caches[i - self.start_layer],
                 attn_metadata,
                 residual,
+                self.slider_variables
             )
         if not get_pp_group().is_last_rank:
             return IntermediateTensors({
