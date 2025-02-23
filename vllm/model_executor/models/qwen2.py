@@ -466,7 +466,7 @@ class Qwen2Model(nn.Module):
     def unset_slider_variables(self, ensure_slider_on=True):
         if not self.config.slider_on:
             if ensure_slider_on:
-                raise ValueError("Cannot call reset_slider_variables() when slider is off.")
+                raise ValueError("Cannot call unset_slider_variables() when slider is off.")
             else:
                 return
         self.slider_variables = None
