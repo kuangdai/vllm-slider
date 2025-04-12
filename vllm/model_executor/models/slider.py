@@ -46,6 +46,7 @@ class SliderModel(nn.Module):
 
         # Define attention factor
         self.attention_factor = nn.Linear(1, 1, bias=False)
+        self.attention_factor.weight.data.zero_()
         self.attention_factor.SLIDER_DO_NOT_REINITIALIZE = True
 
         # Activation and dropout layers
@@ -97,7 +98,10 @@ class SliderModel(nn.Module):
         slider_kv = slider_kv.view(prefix.shape[0], self.n_variables, 2, self.n_slider_heads, self.n_token_dim)
 
         # Expand `n_slider_heads` across `n_base_heads`
-        slider_kv = slider_kv.repeat_interleave(self.n_heads_sharing_slider, dim=3)
+        b, n, _, h, z = slider_kv.shape
+        slider_kv = slider_kv.unsqueeze(3)  # [B, N, 2, 1, H, Z]
+        slider_kv = slider_kv.expand(b, n, 2, self.n_heads_sharing_slider, h, z)
+        slider_kv = slider_kv.reshape(b, n, 2, -1, z)
 
         # Permute for attention format: [batch_size, n_base_heads, seq_len, n_token_dim, 2]
         slider_kv = slider_kv.permute(0, 3, 1, 4, 2)  # Move slider head dim before sequence length
