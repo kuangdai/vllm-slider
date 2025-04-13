@@ -219,6 +219,8 @@ class Qwen2Attention(nn.Module):
             q_batch = q_batch.permute(0, 2, 1, 3)
 
             # Step 2.1: Slice slider_key/slider_value for tensor parallelism
+            tp_rank = get_tensor_model_parallel_rank()
+            tp_size = get_tensor_model_parallel_world_size()
             assert slider_key.shape[1] % tp_size == 0, "Cannot evenly divide slider heads across ranks"
             slider_key = torch.chunk(slider_key, tp_size, dim=1)[tp_rank]
             slider_value = torch.chunk(slider_value, tp_size, dim=1)[tp_rank]
