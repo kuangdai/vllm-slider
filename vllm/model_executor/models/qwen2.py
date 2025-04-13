@@ -62,6 +62,11 @@ from .slider import SliderModel
 import numpy as np
 from torch.nn.utils.rnn import pad_sequence
 
+####################
+# SLIDER ATTENTION #
+####################
+from vllm.distributed import get_tensor_model_parallel_rank
+
 logger = init_logger(__name__)
 
 
@@ -213,15 +218,28 @@ class Qwen2Attention(nn.Module):
             # [batch, head, seq_len, token_dim]
             q_batch = q_batch.permute(0, 2, 1, 3)
 
-            # Step 2: Repeat slider kv
+            # Step 2.1: Slice slider_key/slider_value for tensor parallelism
+            assert slider_key.shape[1] % tp_size == 0, "Cannot evenly divide slider heads across ranks"
+            slider_key = torch.chunk(slider_key, tp_size, dim=1)[tp_rank]
+            slider_value = torch.chunk(slider_value, tp_size, dim=1)[tp_rank]
+
+            # Step 2.2: Repeat slider kv
+            assert q_batch.shape[1] % slider_key.shape[1] == 0, "Cannot evenly share slider heads across queries"
             repeat = q_batch.shape[1] // slider_key.shape[1]
-            slider_key = torch.repeat_interleave(slider_key, repeat, dim=1)
-            slider_value = torch.repeat_interleave(slider_value, repeat, dim=1)
+            # Repeat slider_key from [B, H_kv, S, D] → [B, H_q, S, D]
+            b, h_kv, s, d = slider_key.shape
+            # Insert repeat dimension and expand
+            slider_key = slider_key[:, :, None, :, :]  # [B, H_kv, 1, S, D]
+            slider_key = slider_key.expand(b, h_kv, repeat, s, d)  # [B, H_kv, repeat, S, D]
+            slider_key = slider_key.reshape(b, h_kv * repeat, s, d)  # [B, H_q, S, D]
+            # Same for slider_value
+            slider_value = slider_value[:, :, None, :, :]
+            slider_value = slider_value.expand(b, h_kv, repeat, s, d)
+            slider_value = slider_value.reshape(b, h_kv * repeat, s, d)
 
             # Step 3: Compute attention
             slider_attn_weights = torch.einsum("BHNZ,BHMZ->BHNM", q_batch, slider_key)
-            slider_attn_weights = torch.softmax(slider_attn_weights / np.sqrt(slider_key.shape[-1]),
-                                                dim=-1)
+            slider_attn_weights = torch.softmax(slider_attn_weights / np.sqrt(n_token_dim), dim=-1)
             slider_attn_output = torch.einsum("BHNM,BHMZ->BHNZ", slider_attn_weights, slider_value)
 
             # Step 4: Convert slider_attn_output from batch to flat
