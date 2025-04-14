@@ -462,6 +462,7 @@ class Qwen2Model(nn.Module):
         # SLIDER ARGS #
         ###############
         self.slider_variables = None
+        self.ready_for_user = False
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.embed_tokens(input_ids)
@@ -504,8 +505,15 @@ class Qwen2Model(nn.Module):
         inputs_embeds: Optional[torch.Tensor] = None,
     ) -> Union[torch.Tensor, IntermediateTensors]:
 
+        dummy_slider = False
         if self.config.slider_on:
-            assert self.slider_variables is not None, "You have not called set_slider_variables()."
+            if self.slider_variables is None:
+                if self.ready_for_user:
+                    raise ValueError("You have not called `set_slider_variables()` yet.")
+                else:
+                    # For vllm profiling
+                    self.set_slider_variables(ensure_slider_on=False)
+                    dummy_slider = True
 
         if get_pp_group().is_first_rank:
             if inputs_embeds is not None:
@@ -534,6 +542,10 @@ class Qwen2Model(nn.Module):
                 "residual": residual
             })
         hidden_states, _ = self.norm(hidden_states, residual)
+
+        if dummy_slider:
+            self.unset_slider_variables(ensure_slider_on=False)
+
         return hidden_states
 
     def load_weights(self, weights: Iterable[Tuple[str,
