@@ -406,7 +406,8 @@ class SliderVariables:
     })
 class Qwen2Model(nn.Module):
 
-    def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+    def __init__(self, *, vllm_config: VllmConfig, prefix: str = "",
+                 decoder_layer_type=Qwen2DecoderLayer):
         super().__init__()
 
         config = vllm_config.model_config.hf_config
@@ -443,7 +444,7 @@ class Qwen2Model(nn.Module):
 
         self.start_layer, self.end_layer, self.layers = make_layers(
             config.num_hidden_layers,
-            lambda prefix: Qwen2DecoderLayer(config=config,
+            lambda prefix: decoder_layer_type(config=config,
                                              cache_config=cache_config,
                                              quant_config=quant_config,
                                              prefix=prefix),
@@ -618,7 +619,8 @@ class Qwen2ForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         ],
     }
 
-    def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
+    def __init__(self, *, vllm_config: VllmConfig, prefix: str = "",
+                 model_type=Qwen2Model):
         super().__init__()
         config = vllm_config.model_config.hf_config
         quant_config = vllm_config.quant_config
@@ -628,7 +630,7 @@ class Qwen2ForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         self.lora_config = lora_config
 
         self.quant_config = quant_config
-        self.model = Qwen2Model(vllm_config=vllm_config,
+        self.model = model_type(vllm_config=vllm_config,
                                 prefix=maybe_prefix(prefix, "model"))
 
         if get_pp_group().is_last_rank:

@@ -93,6 +93,7 @@ _TEXT_GENERATION_MODELS = {
     "PhiMoEForCausalLM": ("phimoe", "PhiMoEForCausalLM"),
     "QWenLMHeadModel": ("qwen", "QWenLMHeadModel"),
     "Qwen2ForCausalLM": ("qwen2", "Qwen2ForCausalLM"),
+    "Qwen3ForCausalLM": ("qwen3", "Qwen3ForCausalLM"),
     "Qwen2MoeForCausalLM": ("qwen2_moe", "Qwen2MoeForCausalLM"),
     "RWForCausalLM": ("falcon", "FalconForCausalLM"),
     "StableLMEpochForCausalLM": ("stablelm", "StablelmForCausalLM"),
