@@ -60,6 +60,13 @@ from torch.nn.utils.rnn import pad_sequence
 ####################
 from vllm.distributed import get_tensor_model_parallel_rank
 
+def manual_rms_norm(x: torch.Tensor, weight: torch.Tensor, eps: float) -> torch.Tensor:
+    orig_dtype = x.dtype
+    x = x.to(weight.dtype)
+    variance = x.pow(2).mean(dim=-1, keepdim=True)
+    x = x * torch.rsqrt(variance + eps)
+    return (x * weight).to(orig_dtype)
+
 
 class Qwen3Attention(nn.Module):
 
@@ -149,15 +156,17 @@ class Qwen3Attention(nn.Module):
     ) -> torch.Tensor:
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
-        # Add qk-norm
-        q_by_head = q.view(*q.shape[:-1], q.shape[-1] // self.head_dim,
-                           self.head_dim)
-        q_by_head = self.q_norm(q_by_head)
+
+        # Add q-norm
+        q_by_head = q.view(*q.shape[:-1], q.shape[-1] // self.head_dim, self.head_dim)
+        q_by_head = manual_rms_norm(q_by_head, self.q_norm.weight, self.q_norm.variance_epsilon)
         q = q_by_head.view(q.shape)
-        k_by_head = k.view(*k.shape[:-1], k.shape[-1] // self.head_dim,
-                           self.head_dim)
-        k_by_head = self.k_norm(k_by_head)
+
+        # Add k-norm
+        k_by_head = k.view(*k.shape[:-1], k.shape[-1] // self.head_dim, self.head_dim)
+        k_by_head = manual_rms_norm(k_by_head, self.k_norm.weight, self.k_norm.variance_epsilon)
         k = k_by_head.view(k.shape)
+
         q, k = self.rotary_emb(positions, q, k)
         attn_output = self.attn(q, k, v, kv_cache, attn_metadata)
 
