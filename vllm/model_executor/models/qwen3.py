@@ -297,7 +297,7 @@ class Qwen3DecoderLayer(nn.Module):
                 config.slider_n_heads_sharing_slider,
                 config.slider_dropout,
                 config.num_key_value_heads,
-                config.hidden_size // config.num_attention_heads
+                config.head_dim
             )
 
         ###################
